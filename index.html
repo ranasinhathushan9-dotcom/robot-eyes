@@ -2,210 +2,83 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>Stable Robot Eyes</title>
-
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+<title>Vector Eyes Robot</title>
 
 <style>
 html, body {
-  margin:0;
-  padding:0;
-  background:black;
-  overflow:hidden;
+  margin: 0;
+  height: 100%;
+  background: black;
+  overflow: hidden;
 }
 
-canvas { display:block; }
-video { display:none; }
+/* center container */
+.face {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%,-50%);
+  display: flex;
+  gap: 80px;
+}
 
-/* prevents iPhone scroll refresh issues */
-body {
-  position: fixed;
-  width: 100%;
-  height: 100%;
+/* EYE STYLE (IMPORTANT PART) */
+.eye {
+  width: 140px;
+  height: 140px;
+  background: #00e5ff;
+  border-radius: 25px;
+
+  /* glow effect */
+  box-shadow:
+    0 0 15px #00e5ff,
+    0 0 40px #00e5ff,
+    inset 0 0 20px rgba(255,255,255,0.2);
+
+  position: relative;
+  overflow: hidden;
+
+  animation: blink 5s infinite;
+}
+
+/* inner dark pupil */
+.pupil {
+  width: 60px;
+  height: 60px;
+  background: black;
+  border-radius: 15px;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%,-50%);
+}
+
+/* blink animation */
+@keyframes blink {
+  0%, 92%, 100% {
+    transform: scaleY(1);
+  }
+  95% {
+    transform: scaleY(0.05);
+  }
+}
+
+/* subtle hover alive effect */
+.eye::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle, rgba(255,255,255,0.2), transparent);
 }
 </style>
 </head>
 
 <body>
 
-<video id="video"></video>
-<canvas id="c"></canvas>
-
-<script>
-const canvas = document.getElementById("c");
-const ctx = canvas.getContext("2d");
-const video = document.getElementById("video");
-
-function resize(){
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
-}
-window.addEventListener("resize", resize);
-resize();
-
-/* =========================
-   STATE (smoothed)
-========================= */
-let faceX = 0.5;
-let faceSize = 0;
-let lastSeen = 0;
-
-let smoothX = 0.5;
-
-/* =========================
-   EMOTION BRAIN
-========================= */
-let emotion = "idle";
-
-function brain(){
-
-  const now = Date.now();
-
-  if(now - lastSeen > 2000){
-    emotion = "sleepy";
-    return;
-  }
-
-  if(faceSize > 0.35){
-    emotion = "surprised";
-    return;
-  }
-
-  if(smoothX < 0.4){
-    emotion = "lookLeft";
-    return;
-  }
-
-  if(smoothX > 0.6){
-    emotion = "lookRight";
-    return;
-  }
-
-  emotion = "curious";
-}
-
-/* =========================
-   DRAW EYES
-========================= */
-function drawEyes(){
-
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-
-  ctx.fillStyle = "black";
-  ctx.fillRect(0,0,canvas.width,canvas.height);
-
-  let cx = canvas.width/2;
-  let cy = canvas.height/2;
-
-  let spacing = canvas.width * 0.18;
-  let size = canvas.width * 0.08;
-
-  let open = 1;
-
-  if(emotion === "sleepy") open = 0.2;
-  if(emotion === "surprised") open = 1.4;
-
-  function eye(x,y){
-
-    ctx.fillStyle = "white";
-    ctx.beginPath();
-    ctx.ellipse(x,y,size,size*open,0,0,Math.PI*2);
-    ctx.fill();
-
-    let px = (smoothX - 0.5) * size * 2;
-
-    ctx.fillStyle = "black";
-    ctx.beginPath();
-    ctx.arc(x + px, y, size*0.3, 0, Math.PI*2);
-    ctx.fill();
-  }
-
-  eye(cx - spacing, cy);
-  eye(cx + spacing, cy);
-}
-
-/* =========================
-   SMOOTHING (VERY IMPORTANT FOR IPHONE)
-========================= */
-function smooth(){
-
-  smoothX += (faceX - smoothX) * 0.15;
-}
-
-/* =========================
-   CAMERA START (STABLE)
-========================= */
-
-let faceDetection;
-let camera;
-
-async function start(){
-
-  faceDetection = new FaceDetection.FaceDetection({
-    locateFile: (file) =>
-      `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`
-  });
-
-  faceDetection.setOptions({
-    model: "short",
-    minDetectionConfidence: 0.6
-  });
-
-  faceDetection.onResults((res)=>{
-
-    if(res.detections && res.detections.length > 0){
-
-      const box = res.detections[0].boundingBox;
-
-      faceX = box.xCenter || 0.5;
-      faceSize = box.width || 0.2;
-
-      lastSeen = Date.now();
-    }
-  });
-
-  camera = new Camera(video, {
-    onFrame: async () => {
-
-      // 🔥 IMPORTANT: throttling for iPhone stability
-      await faceDetection.send({image: video});
-    },
-    width: 640,
-    height: 480,
-    facingMode: "user"
-  });
-
-  camera.start();
-}
-
-/* =========================
-   RENDER LOOP (LIGHTWEIGHT)
-========================= */
-function loop(){
-  smooth();
-  brain();
-  drawEyes();
-  requestAnimationFrame(loop);
-}
-
-/* =========================
-   iPhone SAFE START
-   MUST BE USER CLICKED
-========================= */
-
-function init(){
-  start();
-  loop();
-
-  // fullscreen attempt (iOS limited but safe)
-  document.documentElement.requestFullscreen?.();
-}
-
-window.addEventListener("touchstart", init, {once:true});
-window.addEventListener("click", init, {once:true});
-
-</script>
+<div class="face">
+  <div class="eye"><div class="pupil"></div></div>
+  <div class="eye"><div class="pupil"></div></div>
+</div>
 
 </body>
 </html>
