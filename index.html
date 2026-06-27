@@ -1,140 +1,100 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="utf-8">
-<title>Vector Robot Eyes V2</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vector Eyes</title>
 
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
 
 <style>
-html, body {
-  margin:0;
-  height:100%;
-  background:black;
-  overflow:hidden;
+body {
+  margin: 0;
+  background: black;
+  overflow: hidden;
 }
 
-/* CENTER FACE */
-.face {
-  position:absolute;
-  top:50%;
-  left:50%;
-  transform:translate(-50%,-50%);
-  display:flex;
-  gap:80px;
+#eyes {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  gap: 40px;
 }
 
-/* EYE BASE */
 .eye {
-  width:140px;
-  height:140px;
-  background:#00e5ff;
-  border-radius:25px;
-  box-shadow:0 0 20px #00e5ff, 0 0 60px #00e5ff;
-  position:relative;
-  overflow:hidden;
-  transition: all 0.3s ease;
-}
-
-/* PUPIL */
-.pupil {
-  width:60px;
-  height:60px;
-  background:black;
-  border-radius:15px;
-  position:absolute;
-  top:50%;
-  left:50%;
-  transform:translate(-50%,-50%);
+  width: 120px;
+  height: 120px;
+  background: cyan;
+  border-radius: 25px;
+  box-shadow: 0 0 25px cyan;
   transition: all 0.15s ease;
-}
-
-/* EMOTION MODES */
-.happy {
-  border-radius: 35px;
-  transform: scaleY(0.9);
-}
-
-.sad {
-  border-radius: 25px 25px 60px 60px;
-  transform: scaleY(1.1);
-}
-
-.angry {
-  border-radius: 10px;
-  transform: skewX(-10deg);
+  opacity: 0.9;
 }
 </style>
 </head>
 
 <body>
 
-<video id="video" style="display:none;"></video>
-
-<div class="face">
-  <div class="eye" id="eyeL"><div class="pupil" id="pL"></div></div>
-  <div class="eye" id="eyeR"><div class="pupil" id="pR"></div></div>
+<div id="eyes">
+  <div class="eye"></div>
+  <div class="eye"></div>
 </div>
 
+<video class="input_video" style="display:none;"></video>
+
 <script>
-let faceX = 0.5;
-let faceSize = 0;
-let lastSeen = Date.now();
-let emotion = "neutral";
+let eyeW = 120;
+let eyeH = 120;
+let gap = 40;
 
-/* ELEMENTS */
-const eyeL = document.getElementById("eyeL");
-const eyeR = document.getElementById("eyeR");
-const pL = document.getElementById("pL");
-const pR = document.getElementById("pR");
+let lastX = 0.5;
+let noFaceTime = 0;
 
-/* 🧠 EMOTION BRAIN */
-function brain(){
+function applyEyes() {
+  document.querySelectorAll(".eye").forEach(e => {
+    e.style.width = eyeW + "px";
+    e.style.height = eyeH + "px";
+  });
 
-  if(Date.now() - lastSeen > 2000){
-    setEmotion("sad");
-    return;
-  }
-
-  if(faceSize > 0.35){
-    setEmotion("angry");
-    return;
-  }
-
-  if(faceX < 0.4 || faceX > 0.6){
-    setEmotion("happy");
-    return;
-  }
-
-  setEmotion("neutral");
+  document.getElementById("eyes").style.gap = gap + "px";
 }
 
-/* 👀 APPLY EMOTION */
-function setEmotion(e){
+// ---------------- EMOTION ENGINE ----------------
 
-  emotion = e;
+function setEmotion(type) {
+  switch(type) {
 
-  eyeL.className = "eye";
-  eyeR.className = "eye";
+    case "neutral":
+      eyeW = 120;
+      eyeH = 120;
+      gap = 40;
+      break;
 
-  if(e === "happy"){
-    eyeL.classList.add("happy");
-    eyeR.classList.add("happy");
-  }
+    case "curious":
+      eyeW = 140;
+      eyeH = 130;
+      gap = 25;
+      break;
 
-  if(e === "sad"){
-    eyeL.classList.add("sad");
-    eyeR.classList.add("sad");
-  }
+    case "surprised":
+      eyeW = 100;
+      eyeH = 160;
+      gap = 20;
+      break;
 
-  if(e === "angry"){
-    eyeL.classList.add("angry");
-    eyeR.classList.add("angry");
+    case "sleep":
+      eyeW = 120;
+      eyeH = 60;
+      gap = 50;
+      break;
   }
 }
 
-/* 👀 FACE TRACKING */
+// ---------------- FACE TRACKING ----------------
+
+const videoElement = document.querySelector(".input_video");
+
 const faceDetection = new FaceDetection.FaceDetection({
   locateFile: (file) =>
     `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`
@@ -145,41 +105,68 @@ faceDetection.setOptions({
   minDetectionConfidence: 0.6
 });
 
-faceDetection.onResults((res)=>{
+faceDetection.onResults(onResults);
 
-  if(res.detections && res.detections.length > 0){
-
-    const box = res.detections[0].boundingBox;
-
-    faceX = box.xCenter || 0.5;
-    faceSize = box.width || 0.2;
-
-    lastSeen = Date.now();
-  }
-});
-
-/* 📱 CAMERA */
-const camera = new Camera(document.getElementById("video"), {
+const camera = new Camera(videoElement, {
   onFrame: async () => {
-    await faceDetection.send({image: video});
-    brain();
-    moveEyes();
+    await faceDetection.send({ image: videoElement });
   },
   width: 640,
-  height: 480,
-  facingMode: "user"
+  height: 480
 });
 
 camera.start();
 
-/* 👀 MOVE PUPILS */
-function moveEyes(){
+// ---------------- MAIN LOGIC ----------------
 
-  let offsetX = (faceX - 0.5) * 60;
+function onResults(results) {
 
-  pL.style.transform = `translate(-50%,-50%) translate(${offsetX}px,0px)`;
-  pR.style.transform = `translate(-50%,-50%) translate(${offsetX}px,0px)`;
+  // ❌ NO FACE = sleep timer
+  if (!results.detections.length) {
+    noFaceTime += 100;
+
+    if (noFaceTime > 3000) {
+      setEmotion("sleep");
+      applyEyes();
+    }
+    return;
+  }
+
+  noFaceTime = 0;
+
+  let box = results.detections[0].boundingBox;
+  let x = box.xCenter;
+
+  // movement speed
+  let speed = Math.abs(x - lastX);
+  lastX = x;
+
+  // 🧠 EMOTION LOGIC
+
+  if (speed > 0.08) {
+    setEmotion("surprised");
+  }
+  else if (x > 0.6) {
+    setEmotion("curious");
+  }
+  else {
+    setEmotion("neutral");
+  }
+
+  applyEyes();
 }
+
+// idle animation loop (Vector breathing feel)
+setInterval(() => {
+  let pulse = Math.sin(Date.now() / 600);
+
+  document.querySelectorAll(".eye").forEach(e => {
+    e.style.opacity = 0.7 + pulse * 0.2;
+    e.style.boxShadow = `0 0 ${20 + pulse * 10}px cyan`;
+  });
+
+}, 50);
+
 </script>
 
 </body>
