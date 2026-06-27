@@ -2,10 +2,8 @@
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Vector Eyes</title>
 
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
 
 <style>
 body {
@@ -28,8 +26,7 @@ body {
   background: cyan;
   border-radius: 25px;
   box-shadow: 0 0 25px cyan;
-  transition: all 0.15s ease;
-  opacity: 0.9;
+  transition: all 0.12s ease;
 }
 </style>
 </head>
@@ -41,7 +38,7 @@ body {
   <div class="eye"></div>
 </div>
 
-<video class="input_video" style="display:none;"></video>
+<video id="video" autoplay playsinline style="display:none;"></video>
 
 <script>
 let eyeW = 120;
@@ -49,9 +46,98 @@ let eyeH = 120;
 let gap = 40;
 
 let lastX = 0.5;
-let noFaceTime = 0;
+let noFace = 0;
 
-function applyEyes() {
+const video = document.getElementById("video");
+
+// ---------------- CAMERA FIX (IMPORTANT) ----------------
+async function startCamera() {
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: "user" },
+    audio: false
+  });
+
+  video.srcObject = stream;
+
+  await new Promise(resolve => {
+    video.onloadedmetadata = () => {
+      video.play();
+      resolve();
+    };
+  });
+
+  startFace();
+}
+
+// ---------------- MEDIA PIPE ----------------
+const faceDetection = new FaceDetection.FaceDetection({
+  locateFile: (file) =>
+    `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`
+});
+
+faceDetection.setOptions({
+  model: "short",
+  minDetectionConfidence: 0.5
+});
+
+faceDetection.onResults(onResults);
+
+// ---------------- FIXED LOOP ----------------
+async function startFace() {
+  setInterval(async () => {
+    await faceDetection.send({ image: video });
+  }, 100);
+}
+
+// ---------------- EMOTION ----------------
+function setEmotion(type) {
+  if (type === "neutral") {
+    eyeW = 120; eyeH = 120; gap = 40;
+  }
+  if (type === "curious") {
+    eyeW = 140; eyeH = 130; gap = 25;
+  }
+  if (type === "surprised") {
+    eyeW = 100; eyeH = 160; gap = 20;
+  }
+  if (type === "sleep") {
+    eyeW = 120; eyeH = 60; gap = 50;
+  }
+}
+
+// ---------------- FIXED FACE PARSING ----------------
+function onResults(results) {
+
+  if (!results.detections || results.detections.length === 0) {
+    noFace += 1;
+    if (noFace > 20) setEmotion("sleep");
+    apply();
+    return;
+  }
+
+  noFace = 0;
+
+  const box = results.detections[0].boundingBox;
+
+  // FIX: correct safe parsing
+  const x = box.xCenter || 0.5;
+
+  const speed = Math.abs(x - lastX);
+  lastX = x;
+
+  if (speed > 0.08) {
+    setEmotion("surprised");
+  } else if (x > 0.6) {
+    setEmotion("curious");
+  } else {
+    setEmotion("neutral");
+  }
+
+  apply();
+}
+
+// ---------------- APPLY UI ----------------
+function apply() {
   document.querySelectorAll(".eye").forEach(e => {
     e.style.width = eyeW + "px";
     e.style.height = eyeH + "px";
@@ -60,112 +146,8 @@ function applyEyes() {
   document.getElementById("eyes").style.gap = gap + "px";
 }
 
-// ---------------- EMOTION ENGINE ----------------
-
-function setEmotion(type) {
-  switch(type) {
-
-    case "neutral":
-      eyeW = 120;
-      eyeH = 120;
-      gap = 40;
-      break;
-
-    case "curious":
-      eyeW = 140;
-      eyeH = 130;
-      gap = 25;
-      break;
-
-    case "surprised":
-      eyeW = 100;
-      eyeH = 160;
-      gap = 20;
-      break;
-
-    case "sleep":
-      eyeW = 120;
-      eyeH = 60;
-      gap = 50;
-      break;
-  }
-}
-
-// ---------------- FACE TRACKING ----------------
-
-const videoElement = document.querySelector(".input_video");
-
-const faceDetection = new FaceDetection.FaceDetection({
-  locateFile: (file) =>
-    `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`
-});
-
-faceDetection.setOptions({
-  model: "short",
-  minDetectionConfidence: 0.6
-});
-
-faceDetection.onResults(onResults);
-
-const camera = new Camera(videoElement, {
-  onFrame: async () => {
-    await faceDetection.send({ image: videoElement });
-  },
-  width: 640,
-  height: 480
-});
-
-camera.start();
-
-// ---------------- MAIN LOGIC ----------------
-
-function onResults(results) {
-
-  // ❌ NO FACE = sleep timer
-  if (!results.detections.length) {
-    noFaceTime += 100;
-
-    if (noFaceTime > 3000) {
-      setEmotion("sleep");
-      applyEyes();
-    }
-    return;
-  }
-
-  noFaceTime = 0;
-
-  let box = results.detections[0].boundingBox;
-  let x = box.xCenter;
-
-  // movement speed
-  let speed = Math.abs(x - lastX);
-  lastX = x;
-
-  // 🧠 EMOTION LOGIC
-
-  if (speed > 0.08) {
-    setEmotion("surprised");
-  }
-  else if (x > 0.6) {
-    setEmotion("curious");
-  }
-  else {
-    setEmotion("neutral");
-  }
-
-  applyEyes();
-}
-
-// idle animation loop (Vector breathing feel)
-setInterval(() => {
-  let pulse = Math.sin(Date.now() / 600);
-
-  document.querySelectorAll(".eye").forEach(e => {
-    e.style.opacity = 0.7 + pulse * 0.2;
-    e.style.boxShadow = `0 0 ${20 + pulse * 10}px cyan`;
-  });
-
-}, 50);
+// ---------------- START ON TAP (iOS REQUIRED) ----------------
+document.body.addEventListener("click", startCamera);
 
 </script>
 
