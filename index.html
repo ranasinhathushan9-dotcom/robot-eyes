@@ -2,83 +2,185 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>Vector Eyes Robot</title>
+<title>Vector Robot Eyes V2</title>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
 
 <style>
 html, body {
-  margin: 0;
-  height: 100%;
-  background: black;
-  overflow: hidden;
+  margin:0;
+  height:100%;
+  background:black;
+  overflow:hidden;
 }
 
-/* center container */
+/* CENTER FACE */
 .face {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%,-50%);
-  display: flex;
-  gap: 80px;
+  position:absolute;
+  top:50%;
+  left:50%;
+  transform:translate(-50%,-50%);
+  display:flex;
+  gap:80px;
 }
 
-/* EYE STYLE (IMPORTANT PART) */
+/* EYE BASE */
 .eye {
-  width: 140px;
-  height: 140px;
-  background: #00e5ff;
-  border-radius: 25px;
-
-  /* glow effect */
-  box-shadow:
-    0 0 15px #00e5ff,
-    0 0 40px #00e5ff,
-    inset 0 0 20px rgba(255,255,255,0.2);
-
-  position: relative;
-  overflow: hidden;
-
-  animation: blink 5s infinite;
+  width:140px;
+  height:140px;
+  background:#00e5ff;
+  border-radius:25px;
+  box-shadow:0 0 20px #00e5ff, 0 0 60px #00e5ff;
+  position:relative;
+  overflow:hidden;
+  transition: all 0.3s ease;
 }
 
-/* inner dark pupil */
+/* PUPIL */
 .pupil {
-  width: 60px;
-  height: 60px;
-  background: black;
-  border-radius: 15px;
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%,-50%);
+  width:60px;
+  height:60px;
+  background:black;
+  border-radius:15px;
+  position:absolute;
+  top:50%;
+  left:50%;
+  transform:translate(-50%,-50%);
+  transition: all 0.15s ease;
 }
 
-/* blink animation */
-@keyframes blink {
-  0%, 92%, 100% {
-    transform: scaleY(1);
-  }
-  95% {
-    transform: scaleY(0.05);
-  }
+/* EMOTION MODES */
+.happy {
+  border-radius: 35px;
+  transform: scaleY(0.9);
 }
 
-/* subtle hover alive effect */
-.eye::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(circle, rgba(255,255,255,0.2), transparent);
+.sad {
+  border-radius: 25px 25px 60px 60px;
+  transform: scaleY(1.1);
+}
+
+.angry {
+  border-radius: 10px;
+  transform: skewX(-10deg);
 }
 </style>
 </head>
 
 <body>
 
+<video id="video" style="display:none;"></video>
+
 <div class="face">
-  <div class="eye"><div class="pupil"></div></div>
-  <div class="eye"><div class="pupil"></div></div>
+  <div class="eye" id="eyeL"><div class="pupil" id="pL"></div></div>
+  <div class="eye" id="eyeR"><div class="pupil" id="pR"></div></div>
 </div>
+
+<script>
+let faceX = 0.5;
+let faceSize = 0;
+let lastSeen = Date.now();
+let emotion = "neutral";
+
+/* ELEMENTS */
+const eyeL = document.getElementById("eyeL");
+const eyeR = document.getElementById("eyeR");
+const pL = document.getElementById("pL");
+const pR = document.getElementById("pR");
+
+/* 🧠 EMOTION BRAIN */
+function brain(){
+
+  if(Date.now() - lastSeen > 2000){
+    setEmotion("sad");
+    return;
+  }
+
+  if(faceSize > 0.35){
+    setEmotion("angry");
+    return;
+  }
+
+  if(faceX < 0.4 || faceX > 0.6){
+    setEmotion("happy");
+    return;
+  }
+
+  setEmotion("neutral");
+}
+
+/* 👀 APPLY EMOTION */
+function setEmotion(e){
+
+  emotion = e;
+
+  eyeL.className = "eye";
+  eyeR.className = "eye";
+
+  if(e === "happy"){
+    eyeL.classList.add("happy");
+    eyeR.classList.add("happy");
+  }
+
+  if(e === "sad"){
+    eyeL.classList.add("sad");
+    eyeR.classList.add("sad");
+  }
+
+  if(e === "angry"){
+    eyeL.classList.add("angry");
+    eyeR.classList.add("angry");
+  }
+}
+
+/* 👀 FACE TRACKING */
+const faceDetection = new FaceDetection.FaceDetection({
+  locateFile: (file) =>
+    `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`
+});
+
+faceDetection.setOptions({
+  model: "short",
+  minDetectionConfidence: 0.6
+});
+
+faceDetection.onResults((res)=>{
+
+  if(res.detections && res.detections.length > 0){
+
+    const box = res.detections[0].boundingBox;
+
+    faceX = box.xCenter || 0.5;
+    faceSize = box.width || 0.2;
+
+    lastSeen = Date.now();
+  }
+});
+
+/* 📱 CAMERA */
+const camera = new Camera(document.getElementById("video"), {
+  onFrame: async () => {
+    await faceDetection.send({image: video});
+    brain();
+    moveEyes();
+  },
+  width: 640,
+  height: 480,
+  facingMode: "user"
+});
+
+camera.start();
+
+/* 👀 MOVE PUPILS */
+function moveEyes(){
+
+  let offsetX = (faceX - 0.5) * 60;
+
+  pL.style.transform = `translate(-50%,-50%) translate(${offsetX}px,0px)`;
+  pR.style.transform = `translate(-50%,-50%) translate(${offsetX}px,0px)`;
+}
+</script>
 
 </body>
 </html>
